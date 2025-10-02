@@ -21,6 +21,8 @@ gen x_it = rnormal(6, 6) + runiform(0,1)*time
 gen ps=invlogit(-3 + 0.9 * x_it + rnormal(0, 1))
 gen treatment=(ps>0.3) if time==1
 bysort id: replace treatment = treatment[1] // Treatment is a time-invariant group indicator
+replace x_it=x_it + 2*treatment // Add a difference in x between treatment and control
+drop ps
 
 // 4. Generate practice-level unobserved ability (a_i), observable noise (e.g. case-mix, n_it) and idiosyncratic error (epsilon_it)
 gen a_i = rnormal(0, 5) if time == 1
@@ -62,4 +64,5 @@ local beta_x 0.3 // True effect of X on Y
 local tau=0.3 // Define the true learning effect over time
 
 // True model: Y_it = beta_0 + tau*time + beta_x*x + te * treated + n_it + a_i + epsilon_it
+
 gen y = 10 + `tau'*time + `beta_x' * x_it + te * treated + n_it + a_i + epsilon_it
