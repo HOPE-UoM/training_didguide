@@ -12,27 +12,12 @@ set seed 333 // for reproducibility
 
 // 2. Generate panel structure
 gen id = ceil(_n/`T')
-gen time = mod(_n-1, `T') + 1
+bys id: g time=_n
 sort id time
 xtset id time
 
-// 3. Create confounding variable x (correlated with y and treatment)
-gen x_it = rnormal(6, 6) + runiform(0,1)*time
-gen ps=invlogit(-3 + 0.9 * x_it + rnormal(0, 1))
-gen treatment=(ps>0.3) if time==1
-bysort id: replace treatment = treatment[1] // Treatment is a time-invariant group indicator
-replace x_it=x_it + 2*treatment // Add a difference in x between treatment and control
-drop ps
-
-// 4. Generate practice-level unobserved ability (a_i), observable noise (e.g. case-mix, n_it) and idiosyncratic error (epsilon_it)
-gen a_i = rnormal(0, 5) if time == 1
-by id: replace a_i = a_i[1]
-gen epsilon_it = rnormal(0, 10) 
-gen n_it = rnormal(3,3)
-
-// 5. Create four treatment cohorts with one never treated group
-
-// Create a variable to define the cohort based on 'id' with different treatment times
+// 3. Create four treatment cohorts with one never treated group
+gen treatment=(id>1999)
 egen countertreat=group(id) if treatment==1
 qui: sum countertreat
 local TN `r(max)'
@@ -40,29 +25,37 @@ gen treattime = .
 replace treattime = 0 if treatment==0          												// Never Treated (Control)
 replace treattime = 4 if treatment==1&countertreat <= (`TN'/3)  							// Treated at t=4
 replace treattime = 6 if treatment==1&countertreat > (`TN'/3) & countertreat <= (2*`TN'/3) 	// Treated at t=6
-replace treattime = 9 if treatment==1&countertreat > (2*`TN'/3)                 			// Treated at t=9
+replace treattime = 8 if treatment==1&countertreat > (2*`TN'/3)                 			// Treated at t=8
 egen group=group(treattime)
-label define grouplabs 1 "Never treated" 2 "Treated at t=4" 3 "Treated at t=6" 4 "Treated at t=9"
+label define grouplabs 1 "Never treated" 2 "Treated at t=4" 3 "Treated at t=6" 4 "Treated at t=8"
 label values group grouplabs
-
-// Create relative time-to-treatment (timetotreat) & instantaneous treatment dummy (treated)
 gen timetotreat= time - treattime
 replace timetotreat = -100 if treattime == 0 // Tgroup gets a distinct code
 gen treated = (timetotreat >= 0) if timetotreat != -100
 replace treated = 0 if treattime == 0
 
-// 6. Simulate outcome with heterogeneous (true) treatment effect
+// 4. Create unobservable time-varying confounding (correlated with y and treatment)
+generate effort_it = rnormal(50, 2)+5*treatment if time==1
+replace effort_it = l.effort_it+0.1*time*treatment if missing(effort_it)
 
-// Define true treatment effect for the different cohorts§
+// 5. Generate practice-level unobserved ability (a_i), observable confounders and noise (e.g. case-mix, staff) and idiosyncratic error (epsilon_it)
+gen casemix_it=rnormal(10, 20)
+gen a_i = rnormal(0, 5) + treatment*5 if time == 1
+by id: replace a_i = a_i[1]
+gen epsilon_it = rnormal(0, 10) 
+
+// 6. Simulate outcome with heterogeneous (true) treatment effects across treatment cohorts and different selection mechanisms
+
+// Define true treatment effect for the different cohorts
 gen te=.
 replace te=0 if group==1
 replace te=10 if group==2 
-replace te=-5 if group==3 
-replace te=1 if group==4 
+replace te=-10 if group==3 
+replace te=3 if group==4 
 
-local beta_x 0.3 // True effect of X on Y
-local tau=0.3 // Define the true learning effect over time
+// The true model with selection on observables: Y_it = beta_0 + tau*time + beta_casemix*casemix_it + te * treated + staff_it + a_i + epsilon_it
+gen y_pt = 10 + 0.3*time + te * treated + casemix_it + a_i + epsilon_it
+gen y_npt = 10 + 0.3*time + te * treated + casemix_it + 0.5 * effort_it + a_i + epsilon_it
 
-// True model: Y_it = beta_0 + tau*time + beta_x*x + te * treated + n_it + a_i + epsilon_it
-
-gen y = 10 + `tau'*time + `beta_x' * x_it + te * treated + n_it + a_i + epsilon_it
+keep y* id group time casemix_it treated treatment treattime timetotreat
+order y* id group time casemix_it treated treatment treattime timetotreat
