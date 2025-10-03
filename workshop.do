@@ -24,6 +24,17 @@ clear all
 qui: do $simulation
 xtset id time
 
+// WARM UP: To get us started, let's remind ourselves what FWL does
+gen covariate=rnormal(5,1)
+gen outcome=0.5*covariate + 0.5*casemix_it + rnormal(5,5)
+eststo: reg outcome covariate casemix_it
+reg outcome covariate
+predict res_outcome, res
+reg casemix covariate
+predict res_casemix, res
+eststo: reg res_outcome res_casemix
+esttab, keep(*casemix*)
+
 // See percentage of treated and controls over time
 tab time treated, row
 tab treatment if time==1
